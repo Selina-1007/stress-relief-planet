@@ -16,7 +16,8 @@ const io = new Server(server, {
   }
 });
 
-const JWT_SECRET = 'stress-relief-planet-secret-key-2024';
+// 密钥：优先读环境变量；未设置时使用开发默认值（生产环境务必通过 JWT_SECRET 注入）
+const JWT_SECRET = process.env.JWT_SECRET || 'stress-relief-planet-secret-key-dev-only';
 
 app.use(cors());
 app.use(express.json());
