@@ -1,0 +1,19 @@
+# 依赖与运行时产物
+node_modules/
+*.log
+npm-debug.log*
+
+# 质量数据与上传
+server/data.db
+server/data.db-*
+
+# 本地截图/缓存
+.screenshots/
+.tmp/
+
+# 分享与打包产物
+.trae-html-share-packages/
+*.zip
+
+# 系统
+.DS_Store

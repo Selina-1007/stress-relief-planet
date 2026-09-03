@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: stress-relief-planet
+    runtime: docker
+    plan: free
+    rootDir: ./
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    # 挂载持久磁盘保存 SQLite 数据库（免费套餐不支持挂盘，需升级 Starter 以上）
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /data

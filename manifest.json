@@ -1,0 +1,42 @@
+{
+  "name": "解压星球",
+  "short_name": "解压星球",
+  "description": "你的情绪守护站：智能对话、心情日记、十八种解压小游戏、放松指南、专注计划与白噪音。",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "./stress-relief-planet.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f0f4ff",
+  "theme_color": "#6c8eef",
+  "categories": ["entertainment", "lifestyle", "health"],
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "智能对话",
+      "short_name": "对话",
+      "url": "./stress-relief-planet.html?app=chat",
+      "description": "和 AI 聊聊心里的想法"
+    },
+    {
+      "name": "趣味解压",
+      "short_name": "解压",
+      "url": "./stress-relief-planet.html?app=fun",
+      "description": "打开随机解压小游戏"
+    }
+  ]
+}
