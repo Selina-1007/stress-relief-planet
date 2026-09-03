@@ -1821,15 +1821,20 @@ body.mature-theme .complaint-preset{background:rgba(108,142,239,0.12);color:#E2E
   .age-cards{flex-direction:column;}
   .age-card{width:100%;max-width:280px;}
   .welcome-header .greeting{font-size:22px;}
-  .feature-grid{grid-template-columns:repeat(3,1fr);}
-  .feature-card{padding:16px 8px;}
-  .feature-card .icon{font-size:32px;}
+  .feature-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;}
+  .feature-card{padding:18px 12px;}   /* 手机保持宽敞两列，不再挤成三列 */
+  .feature-card .icon{font-size:34px;}
   .feature-card .name{font-size:13px;}
   .pomodoro-timer{font-size:48px;}
   .checkin-card{padding:20px;text-align:center;}
 }
 @media(max-width:400px){
   .feature-grid{grid-template-columns:repeat(2,1fr);}
+}
+@media(max-width:560px){
+  /* 窄屏用足横向空间，减少左右留白，整体更显宽 */
+  .app{padding-left:12px;padding-right:12px;}
+  .welcome-header .intro{font-size:14px;}
 }
 
 /* ===== 烦恼黑洞 ===== */
