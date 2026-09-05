@@ -2497,6 +2497,8 @@ body.mature-theme .funzone-item:hover{border-color:rgba(108,142,239,0.4);}
   border-radius:var(--radius-sm);border:2px solid var(--bg-1);max-width:100%;height:auto;touch-action:none;
 }
 .slime-hint,.fruit-hint,.stack-hint,.leaf-hint{font-size:13px;color:var(--text-sub);}
+.stack-records{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:10px;font-size:13px;color:var(--text-sub);}
+.stack-records b{color:var(--primary-dark);}
 .sand-controls,.water-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center;}
 .sand-color{width:28px;height:28px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:var(--transition);}
 .sand-color.active{border-color:var(--text-main);transform:scale(1.15);}
@@ -3059,6 +3061,16 @@ function getFeatureUsageInfo(featureId){
 function updateStarDisplay(){
   const el = document.getElementById('starDisplay');
   if(el) el.textContent = getStars();
+}
+
+// 一次性加固定积分（用于破纪录等特别奖励），并刷新顶部星数
+function addBonusStars(amount, msg){
+  const data = Store.get('checkin', {total:0});
+  data.total = (data.total||0) + amount;
+  Store.set('checkin', data);
+  updateStarDisplay();
+  checkReward('feature');
+  if(msg) toast(msg, 5000);
 }
 
 /* ---------- Feature Router ---------- */
@@ -10191,6 +10203,10 @@ function openStackBlock(){
     <div class="stack-wrap">
       <canvas id="stackCanvas" width="320" height="440"></canvas>
       <div class="stack-hint">点击放下方块 🧱 高度：<span id="stackHeight">0</span></div>
+      <div class="stack-records">
+        <span>我的最高：<b id="stackMyBest">0</b> 层</span>
+        <span>🏆 世界纪录：<b id="stackWorldBest">0</b> 层</span>
+      </div>
       <button class="mood-save-btn" onclick="initStack()" style="margin-top:8px;">🔄 重新开始</button>
     </div>
   `);
@@ -10199,6 +10215,10 @@ function openStackBlock(){
 function initStack(){
   const cv = document.getElementById('stackCanvas');
   if(!cv) return;
+  const myEl = document.getElementById('stackMyBest');
+  const wEl = document.getElementById('stackWorldBest');
+  if(myEl) myEl.textContent = Store.get('stackBest',0);
+  if(wEl) wEl.textContent = Store.get('stackWorldBest',0);
   const ctx = cv.getContext('2d');
   const BW = 100; // block width
   let blocks = [{x: cv.width/2 - BW/2, y: cv.height - 30, w: BW}];
@@ -10252,14 +10272,49 @@ function initStack(){
     const overlap = Math.min(current.x + current.w, top.x + top.w) - Math.max(current.x, top.x);
     if(overlap <= 0){
       gameOver = true;
+      const score = blocks.length - 1;
+      // ---- 纪录结算：我的最高 + 世界纪录 ----
+      const myBest = Store.get('stackBest',0);
+      const worldBest = Store.get('stackWorldBest',0);
+      const isNewMy = score > myBest;
+      const beatWorld = score > worldBest;
+      if(isNewMy) Store.set('stackBest', score);
+      if(beatWorld){
+        Store.set('stackWorldBest', score);
+        addBonusStars(10000, '🏆 太强了！你打破了世界纪录「'+score+' 层」，奖励 +10000⭐！');
+      }
+      const myEl = document.getElementById('stackMyBest');
+      const wEl = document.getElementById('stackWorldBest');
+      if(myEl) myEl.textContent = Store.get('stackBest',0);
+      if(wEl) wEl.textContent = Store.get('stackWorldBest',0);
+      // ---- 画结算画面 ----
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(0,0,cv.width,cv.height);
+      ctx.textAlign = 'center';
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 22px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('叠了 ' + (blocks.length-1) + ' 层！', cv.width/2, cv.height/2 - 10);
-      ctx.font = '14px sans-serif';
-      ctx.fillText('点击「重新开始」再试', cv.width/2, cv.height/2 + 20);
+      ctx.fillText('叠了 ' + score + ' 层！', cv.width/2, cv.height/2 - 24);
+      if(beatWorld){
+        ctx.fillStyle = '#ffd55a';
+        ctx.font = 'bold 15px sans-serif';
+        ctx.fillText('🏆 打破世界纪录 · 奖励 +10000⭐', cv.width/2, cv.height/2);
+        ctx.fillStyle = '#cde0ff';
+        ctx.font = '13px sans-serif';
+        ctx.fillText('点击「重新开始」再试', cv.width/2, cv.height/2 + 22);
+      } else if(isNewMy){
+        ctx.fillStyle = '#fff7cc';
+        ctx.font = 'bold 15px sans-serif';
+        ctx.fillText('🎉 我的新纪录！', cv.width/2, cv.height/2);
+        ctx.fillStyle = '#cde0ff';
+        ctx.font = '13px sans-serif';
+        ctx.fillText('点击「重新开始」再试', cv.width/2, cv.height/2 + 22);
+      } else {
+        ctx.font = '14px sans-serif';
+        ctx.fillText('点击「重新开始」再试', cv.width/2, cv.height/2 + 4);
+      }
+      ctx.fillStyle = '#cdd9f5';
+      ctx.font = '13px sans-serif';
+      ctx.fillText('我的最高 '+Store.get('stackBest',0)+' 层 · 世界 '+Store.get('stackWorldBest',0)+' 层', cv.width/2, cv.height/2 + 44);
       return;
     }
     const newX = Math.max(current.x, top.x);
