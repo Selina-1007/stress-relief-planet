@@ -2499,6 +2499,10 @@ body.mature-theme .funzone-item:hover{border-color:rgba(108,142,239,0.4);}
 .slime-hint,.fruit-hint,.stack-hint,.leaf-hint{font-size:13px;color:var(--text-sub);}
 .stack-records{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:10px;font-size:13px;color:var(--text-sub);}
 .stack-records b{color:var(--primary-dark);}
+.stack-cheat{display:flex;gap:8px;justify-content:center;align-items:center;margin-top:10px;flex-wrap:wrap;}
+.stack-cheat input{flex:1;min-width:120px;max-width:200px;padding:7px 12px;border:1px solid rgba(108,142,239,0.35);border-radius:30px;background:rgba(255,255,255,0.6);color:var(--text-main);font-size:12px;font-family:inherit;text-align:center;}
+.stack-cheat input:disabled{opacity:.7;}
+.stack-cheat-status{text-align:center;font-size:12px;color:var(--text-sub);margin-top:6px;line-height:1.5;}
 .sand-controls,.water-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center;}
 .sand-color{width:28px;height:28px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:var(--transition);}
 .sand-color.active{border-color:var(--text-main);transform:scale(1.15);}
@@ -10196,6 +10200,8 @@ function openFruitSlice(){
    叠叠乐 — 时机把握叠方块
    ============================================================ */
 let stackGame = null;
+let stackCheatOn = false;      // 外挂模式是否开启(持久化在 localStorage 'stackCheat')
+let stackCheatFrame = 0;
 function openStackBlock(){
   openModal(`
     <div class="modal-title"><span class="emoji">🧱</span>叠叠乐</div>
@@ -10208,9 +10214,43 @@ function openStackBlock(){
         <span>🏆 世界纪录：<b id="stackWorldBest">300</b> 层</span>
       </div>
       <button class="mood-save-btn" onclick="initStack()" style="margin-top:8px;">🔄 重新开始</button>
+      <div class="stack-cheat">
+        <input id="stackCheatCode" placeholder="输入兑换码开启外挂" maxlength="20" autocomplete="off">
+        <button class="mood-save-btn" onclick="activateStackCheat()">⚡ 开启外挂</button>
+      </div>
+      <div class="stack-cheat-status" id="stackCheatStatus"></div>
     </div>
   `);
+  stackCheatOn = Store.get('stackCheat', false);
+  syncStackCheatUI();
   initStack();
+}
+
+function syncStackCheatUI(){
+  const input = document.getElementById('stackCheatCode');
+  const status = document.getElementById('stackCheatStatus');
+  if(input){
+    input.disabled = !!stackCheatOn;
+    input.value = stackCheatOn ? '✅ 已开启' : '';
+    input.placeholder = stackCheatOn ? '外挂已开启 ⚡' : '输入兑换码开启外挂';
+  }
+  if(status) status.textContent = stackCheatOn ? '⚡ 外挂已开启 · 方块正在超快叠叠中' : '叠叠乐下方输入兑换码可开启超快外挂';
+}
+
+function deactivateStackCheatUI(){ /* 预留：如需关闭外挂可在此实现 */ }
+
+function activateStackCheat(){
+  const input = document.getElementById('stackCheatCode');
+  if(!input) return;
+  const code = input.value.trim().toLowerCase();
+  if(code !== 'waigua1007'){
+    toast('兑换码无效，再检查一下吧');
+    return;
+  }
+  stackCheatOn = true;
+  Store.set('stackCheat', true);
+  toast('⚡⚡ 外挂已开启！超快叠叠启动！', 3500);
+  syncStackCheatUI();
 }
 function initStack(){
   const cv = document.getElementById('stackCanvas');
@@ -10228,10 +10268,23 @@ function initStack(){
 
   function update(){
     if(gameOver) return;
-    current.x += current.dir * current.speed;
-    if(current.x < 0){ current.x = 0; current.dir = 1; }
-    if(current.x + current.w > cv.width){ current.x = cv.width - current.w; current.dir = -1; }
-    draw();
+    if(stackCheatOn){
+      // 外挂：把移动方块强制对齐到顶部正上方，超快自动放下
+      stackCheatFrame++;
+      if(stackCheatFrame >= 2){
+        stackCheatFrame = 0;
+        const top = blocks[blocks.length-1];
+        current.x = top.x + (top.w - current.w) / 2;
+        drop();
+      } else {
+        draw();
+      }
+    } else {
+      current.x += current.dir * current.speed;
+      if(current.x < 0){ current.x = 0; current.dir = 1; }
+      if(current.x + current.w > cv.width){ current.x = cv.width - current.w; current.dir = -1; }
+      draw();
+    }
     requestAnimationFrame(update);
   }
 
@@ -10264,6 +10317,15 @@ function initStack(){
 
     // height display
     document.getElementById('stackHeight').textContent = blocks.length - 1;
+
+    // 外挂标记（左上角红色角标）
+    if(stackCheatOn && !gameOver){
+      ctx.fillStyle = 'rgba(255,100,90,0.92)';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('⚡ 外挂中', 8, 18);
+      ctx.textAlign = 'center';
+    }
   }
 
   function drop(){
