@@ -10205,7 +10205,7 @@ function openStackBlock(){
       <div class="stack-hint">点击放下方块 🧱 高度：<span id="stackHeight">0</span></div>
       <div class="stack-records">
         <span>我的最高：<b id="stackMyBest">0</b> 层</span>
-        <span>🏆 世界纪录：<b id="stackWorldBest">0</b> 层</span>
+        <span>🏆 世界纪录：<b id="stackWorldBest">300</b> 层</span>
       </div>
       <button class="mood-save-btn" onclick="initStack()" style="margin-top:8px;">🔄 重新开始</button>
     </div>
@@ -10218,7 +10218,7 @@ function initStack(){
   const myEl = document.getElementById('stackMyBest');
   const wEl = document.getElementById('stackWorldBest');
   if(myEl) myEl.textContent = Store.get('stackBest',0);
-  if(wEl) wEl.textContent = Store.get('stackWorldBest',0);
+  if(wEl) wEl.textContent = Store.get('stackWorldBest',300);
   const ctx = cv.getContext('2d');
   const BW = 100; // block width
   let blocks = [{x: cv.width/2 - BW/2, y: cv.height - 30, w: BW}];
@@ -10275,7 +10275,7 @@ function initStack(){
       const score = blocks.length - 1;
       // ---- 纪录结算：我的最高 + 世界纪录 ----
       const myBest = Store.get('stackBest',0);
-      const worldBest = Store.get('stackWorldBest',0);
+      const worldBest = Store.get('stackWorldBest',300);
       const isNewMy = score > myBest;
       const beatWorld = score > worldBest;
       if(isNewMy) Store.set('stackBest', score);
@@ -10286,7 +10286,7 @@ function initStack(){
       const myEl = document.getElementById('stackMyBest');
       const wEl = document.getElementById('stackWorldBest');
       if(myEl) myEl.textContent = Store.get('stackBest',0);
-      if(wEl) wEl.textContent = Store.get('stackWorldBest',0);
+      if(wEl) wEl.textContent = Store.get('stackWorldBest',300);
       // ---- 画结算画面 ----
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(0,0,cv.width,cv.height);
@@ -10314,7 +10314,7 @@ function initStack(){
       }
       ctx.fillStyle = '#cdd9f5';
       ctx.font = '13px sans-serif';
-      ctx.fillText('我的最高 '+Store.get('stackBest',0)+' 层 · 世界 '+Store.get('stackWorldBest',0)+' 层', cv.width/2, cv.height/2 + 44);
+      ctx.fillText('我的最高 '+Store.get('stackBest',0)+' 层 · 世界 '+Store.get('stackWorldBest',300)+' 层', cv.width/2, cv.height/2 + 44);
       return;
     }
     const newX = Math.max(current.x, top.x);
