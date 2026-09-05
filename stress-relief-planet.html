@@ -117,6 +117,12 @@ body.mature-theme .star-counter .star-num{color:#8ba5f5;}
 .checkin-card .streak .num{font-size:32px;}
 .checkin-card .quote{font-size:13px;opacity:.9;line-height:1.5;}
 .checkin-card .quote .source{display:block;margin-top:2px;opacity:.7;}
+.custom-quote-btn{
+  margin-top:8px;padding:5px 14px;border:none;cursor:pointer;border-radius:30px;align-self:flex-start;
+  background:rgba(108,142,239,0.15);border:1px solid rgba(108,142,239,0.35);color:var(--primary-dark);
+  font-size:12px;font-weight:600;font-family:inherit;transition:var(--transition);display:none;
+}
+.custom-quote-btn:hover{background:rgba(108,142,239,0.28);}
 .checkin-btn{
   background:rgba(108,142,239,0.2);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
   border:1px solid rgba(108,142,239,0.35);
@@ -2587,7 +2593,8 @@ body.mature-theme .welcome-landing .theme-choice button.active{border-color:#6c8
   <div class="checkin-card">
     <div class="left">
       <div class="streak">🔥 已连续签到 <span class="num" id="streakNum">0</span> 天</div>
-      <div class="quote">每一天都是新的开始，不必完美，只需前行。<span class="source">— 解压星球</span></div>
+      <div class="quote" id="checkinQuote">每一天都是新的开始，不必完美，只需前行。<span class="source">— 解压星球</span></div>
+      <button class="custom-quote-btn" id="customQuoteBtn" onclick="openCustomQuote()" style="display:none;">✍️ 自定义</button>
     </div>
     <button class="checkin-btn" id="checkinBtn" onclick="doCheckin()">今日签到 +5⭐</button>
   </div>
@@ -2761,6 +2768,7 @@ function updateThemeToggleBtn(){
 function initApp(){
   renderFeatureGrid();
   renderCheckin();
+  setupCustomQuote();
   renderMoodDiaryInline();
   renderWhiteNoiseInline();
   startStandupTimer();
@@ -3359,6 +3367,16 @@ const BASE_URL = "API链接";
 
 const CHAT_MODEL = "openai"; // Pollinations 模型，可改为 "mistral" 等
 
+// ===== DeepSeek 代理地址（免费方案：Cloudflare Worker） =====
+// 把下面的地址换成你部署好的 Worker 地址，例如 "https://myscript.workers.dev"。
+// 留空（""）则自动走后端的 /api/chat/gpt（需要你能部署 server.js 的服务器）。
+const CHAT_PROXY_URL = "";
+
+// 返回代理基址：优先用上面配置的 Worker，否则用本站后端
+function chatProxyBase(){
+  return (CHAT_PROXY_URL || API_BASE);
+}
+
 const SYSTEM_PROMPT = `你是一个充满灵性、说话极度自然、随性的深夜疗愈师。拒绝任何官方套话和大白话。
 你要能听懂用户的每一种情绪——不管是难过、暴躁、焦虑，还是开心、兴奋、骄傲、感恩、喜欢，
 都要根据他当时的语气随机应变，给出充满灵魂的、不可预测的随性回应。
@@ -3700,64 +3718,117 @@ function localFallbackReply(text){
   return echo ? `${echo} ${body}` : body;
 }
 
+// 探测后端是否已配置大模型（DeepSeek）。已缓存，避免每条消息都探测。
+let chatBackendPromise = null;
+function detectChatBackend(){
+  if(chatBackendPromise) return chatBackendPromise;
+  chatBackendPromise = (async () => {
+    try{
+      const ctrl = new AbortController();
+      const t = setTimeout(()=>ctrl.abort(), 1500);
+      const res = await fetch(chatProxyBase() + '/api/chat/config', { signal: ctrl.signal });
+      clearTimeout(t);
+      if(!res.ok) return false;
+      const data = await res.json();
+      return !!(data && data.enabled);
+    }catch(e){ return false; }
+  })();
+  return chatBackendPromise;
+}
+
 // 异步获取 AI 回复（纯文本，短超时）
 // 成功返回 string，失败/超时返回 null
 async function fetchAIReply(text, timeoutMs){
   timeoutMs = timeoutMs || 4000;
-  const controller = new AbortController();
-  const tid = setTimeout(()=>controller.abort(), timeoutMs);
   const hasApiKey = API_KEY && API_KEY !== '在这里填入我的Key' && BASE_URL && BASE_URL !== 'API链接';
 
-  try{
-    // 取回用户的投诉并拼进下一次提示词（无投诉时为空字符串）
-    const complaintSuffix = await buildComplaintSuffix();
+  // 取回用户的投诉并拼进下一次提示词（无投诉时为空字符串）
+  const complaintSuffix = await buildComplaintSuffix();
+  // 生成 OpenAI 兼容 messages（DeepSeek / 直接 API 共用）
+  const buildMessages = () => CHAT_HISTORY.map(m=>{
+    if(m.role === 'system'){
+      return {role:'system', content: SYSTEM_PROMPT + complaintSuffix};
+    }
+    return m;
+  });
 
-    let res;
-    if(hasApiKey){
-      // 方式 1：用户配置的 API — 把投诉追加到 system 提示词末尾
-      const messages = CHAT_HISTORY.map(m=>{
-        if(m.role === 'system'){
-          return {role:'system', content: SYSTEM_PROMPT + complaintSuffix};
-        }
-        return m;
+  // 1) 走后端代理（DeepSeek，Key 在服务器端，最安全）——优先
+  const hasBackend = await detectChatBackend();
+  if(hasBackend){
+    try{
+      const ctrl = new AbortController();
+      const tt = setTimeout(()=>ctrl.abort(), timeoutMs);
+      const r = await fetch(chatProxyBase() + '/api/chat/gpt', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        signal: ctrl.signal,
+        body: JSON.stringify({ messages: buildMessages() }),
       });
-      res = await fetch(BASE_URL, {
+      clearTimeout(tt);
+      if(r.ok){
+        const j = await r.json();
+        const c = (j && j.content) ? j.content.trim() : '';
+        if(c) return c;
+      }
+    }catch(e){ /* 后端失败 → 继续回退 */ }
+    // 后端这次没给到内容就回退，并重置缓存，避免持续走坏掉的代理
+    chatBackendPromise = null;
+  }
+
+  // 2) 用户自己填的 API Key（浏览器直连 DeepSeek/OpenAI 等）
+  if(hasApiKey){
+    try{
+      const ctrl = new AbortController();
+      const tt = setTimeout(()=>ctrl.abort(), timeoutMs);
+      const r = await fetch(BASE_URL, {
         method:'POST',
         headers:{
           'Content-Type':'application/json',
           'Authorization':`Bearer ${API_KEY}`,
         },
-        signal: controller.signal,
+        signal: ctrl.signal,
         body: JSON.stringify({
           model: CHAT_MODEL,
-          messages: messages,
+          messages: buildMessages(),
           stream: false,
           max_tokens: 200,
           temperature: 0.85,
         }),
       });
-    } else {
-      // 方式 2：Pollinations AI（GET，纯文本，无需 Key）
-      const MINI_PROMPT = `你是深夜疗愈师，说话自然随性，拒绝套话。你要认真听用户说的每一句话，每次回复都要紧扣用户刚说的具体内容，句句有回应，不能敷衍。语气要自然松弛、带点真性情，可以有轻微毒舌或调侃，不要每句都温柔软绵绵的那样死板。重要：不要擅自给用户贴情绪标签，比如对方说"空虚"不要自动当成"孤独"来安慰，先顺着ta原话确认或提问，别猜错意思。你每次回答控制在3句话以内，按顺序：先一句话接住对方情绪并共情认可（尽量用ta自己的话）；再用一个开放式问题引导对方多说；最后建议只是偶尔给，不要每次都在最后推销去看某个功能。给的时候可以是具体的缓解小建议或某个解压功能，例如心情日记、白噪音、解压小游戏、放松指南、明日盒子、情绪碎片盒。不要三句全是建议也不要三句全是安慰。不要说加油，不要列条目，不要emoji开头，像深夜发微信的朋友。不要每次都提到现在几点了或时间相关的话，除非用户主动问。把注意力完全放在用户说的话上。`;
-      const combined = `${MINI_PROMPT}${complaintSuffix}\n\n用户说：${text}`;
-      const url = `https://text.pollinations.ai/${encodeURIComponent(combined)}?model=${CHAT_MODEL}&referrer=stress-relief-planet`;
-      res = await fetch(url, {signal: controller.signal});
-    }
+      clearTimeout(tt);
+      if(r.ok){
+        const json = await r.json();
+        const content = json.choices?.[0]?.message?.content || '';
+        return content.trim() || null;
+      }
+    }catch(e){}
+  }
 
-    clearTimeout(tid);
-    if(!res.ok) return null;
-
-    if(hasApiKey){
-      const json = await res.json();
-      const content = json.choices?.[0]?.message?.content || '';
-      return content.trim() || null;
-    } else {
-      let txt = await res.text();
-      txt = txt.replace(/^```[\w]*\n?/,'').replace(/\n?```$/,'').trim();
-      return txt || null;
+  // 3) 免费的 Pollinations AI（无需 Key，浏览器直连）。
+  //    这里走稳定可用的匿名 GET 接口，并把最近几轮对话拼进提示，
+  //    让免费模式下也能"记住"上文、保持连贯。
+  try{
+    const ctrl = new AbortController();
+    const tt = setTimeout(()=>ctrl.abort(), timeoutMs);
+    const persona = '你是深夜疗愈师，说话自然随性像深夜发微信的朋友，紧扣用户刚说的内容句句有回应，不敷衍不套话。'
+      + '语气可带点真性情或轻微毒舌，不要每句都软绵绵。控制3句话以内：先共情认可(尽量用ta自己的话)，'
+      + '再开放提问引导，建议偶尔给。不要擅自贴情绪标签，如对方说"空虚"别自动当成"孤独"。'
+      + '不要三句全是建议也不要三句全是安慰，不要说"加油"，不要列条目，不要emoji开头，不要总提时间。' + complaintSuffix;
+    // 用最近几轮(含系统人设)拼成连续上下文
+    let hist = '';
+    const recent = CHAT_HISTORY.filter(m => m.role !== 'system').slice(-6);
+    for(const m of recent){
+      hist += (m.role === 'user' ? '用户：' : '你：') + m.content + '\n';
     }
+    const prompt = `${persona}\n\n以下是近几轮对话，请当作背景接着回复。\n${hist}你：`;
+    const url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=${CHAT_MODEL}&referrer=stress-relief-planet`;
+    const r = await fetch(url, {signal: ctrl.signal});
+    clearTimeout(tt);
+    if(!r.ok) return null;
+    let txt = await r.text();
+    txt = txt.replace(/^```[\w]*\n?/,'').replace(/\n?```$/,'').trim();
+    return txt || null;
   }catch(e){
-    clearTimeout(tid);
     return null;
   }
 }
@@ -12755,6 +12826,8 @@ function applyRedeemCode(){
   renderShop();
   renderRewards();
   updateStarDisplay();
+  setupCustomQuote();
+  restoreDefaultTheme();
 }
 
 function getStars(){ return Store.get('checkin',{}).total || 0; }
@@ -12850,6 +12923,14 @@ function resetTheme(){
   root.style.removeProperty('--accent-mint');
   root.style.removeProperty('--accent-gold');
   Store.set('activeTheme', null);
+}
+
+// 恢复到默认的「活力」浅色主题外观：清除深色主题 css 变量 + 成熟皮肤
+function restoreDefaultTheme(){
+  document.body.classList.remove('mature-theme');
+  Store.set('matureTheme', false);
+  resetTheme();
+  updateThemeToggleBtn();
 }
 
 // 粒子特效
@@ -13177,12 +13258,42 @@ function renderCheckinInfo(){
   `;
 }
 
+/* ---------- 自定义签到语录 ---------- */
+const DEFAULT_CHECKIN_QUOTE = '每一天都是新的开始，不必完美，只需前行。<span class="source">— 解压星球</span>';
+function setupCustomQuote(){
+  const btn = document.getElementById('customQuoteBtn');
+  const q = document.getElementById('checkinQuote');
+  const hasUnlock = getOwned().includes('func-custom-quote');
+  if(btn) btn.style.display = hasUnlock ? 'inline-flex' : 'none';
+  if(q){
+    const custom = Store.get('customQuote','');
+    q.innerHTML = custom ? custom : DEFAULT_CHECKIN_QUOTE;
+  }
+}
+function openCustomQuote(){
+  const cur = Store.get('customQuote','');
+  const input = window.prompt('写下你的自定义签到语录（留空则恢复默认）：', cur || '');
+  if(input === null) return;
+  const txt = input.trim();
+  if(txt){ Store.set('customQuote', txt); toast('💬 签到语录已更新', 2500); }
+  else { Store.del('customQuote'); toast('已恢复默认语录', 2500); }
+  setupCustomQuote();
+}
+
 /* ---------- Boot ---------- */
 (function(){
   // 一次性清理：旧版兑换码曾错误激活了深色主题皮肤，这里检测并清除
   if(!Store.get('themeCleanup_v2', false)){
     Store.set('activeTheme', null);
     Store.set('themeCleanup_v2', true);
+  }
+  // v3：彻底清理历史遗留的深色主题状态（深色主题 css 变量 + 成熟皮肤），
+  // 保证功能按钮（如心情日记）恢复到默认浅色外观
+  if(!Store.get('themeCleanup_v3', false)){
+    document.body.classList.remove('mature-theme');
+    Store.set('matureTheme', false);
+    resetTheme();
+    Store.set('themeCleanup_v3', true);
   }
 
   const visited = Store.get('visited', false);
