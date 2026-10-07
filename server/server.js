@@ -69,6 +69,61 @@ app.get('/api/complaints/pending', (req, res) => {
   res.json({ code: 0, complaints: items.map(i => i.content) });
 });
 
+// ============= AI 对话（DeepSeek）API =============
+// 智能对话走后端代理，大模型 Key 只保存在服务器端环境变量里，不暴露给前端。
+// 需要你在部署环境注入：DEEPSEEK_API_KEY=你的DeepSeekKey      （可选 AI_MODEL=deepseek-chat）
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
+const DEEPSEEK_ENDPOINT = 'https://api.deepseek.com/chat/completions';
+const DEFAULT_AI_MODEL = 'deepseek-chat';
+
+// 配置探测：告诉前端后端是否已开启大模型（用于决定是否走后端 / 回退免费模式）
+app.get('/api/chat/config', (req, res) => {
+  res.json({
+    provider: 'deepseek',
+    enabled: !!DEEPSEEK_API_KEY,
+  });
+});
+
+// 对话代理：前端把 OpenAI 兼容 messages 发来，后端转发给 DeepSeek 再返回
+app.post('/api/chat/gpt', async (req, res) => {
+  const { messages } = req.body || {};
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ code: 400, error: 'messages 不能为空', fallback: true });
+  }
+  if (!DEEPSEEK_API_KEY) {
+    // 未配置 Key：返回 fallback，让前端回退到免费模式
+    return res.status(503).json({ code: 503, error: '未配置 DEEPSEEK_API_KEY', fallback: true });
+  }
+  try {
+    const upstream = await fetch(DEEPSEEK_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: process.env.AI_MODEL || DEFAULT_AI_MODEL,
+        messages,
+        stream: false,
+        max_tokens: 300,
+        temperature: 0.85,
+      }),
+    });
+    if (!upstream.ok) {
+      const errText = await upstream.text().catch(() => '');
+      console.error('DeepSeek 上游返回错误:', upstream.status, errText.slice(0, 300));
+      return res.status(502).json({ code: 502, error: '大模型服务暂时不可用', fallback: true });
+    }
+    const json = await upstream.json();
+    const content = json?.choices?.[0]?.message?.content?.trim() || '';
+    if (!content) return res.status(502).json({ code: 502, error: '大模型返回为空', fallback: true });
+    return res.json({ code: 0, content });
+  } catch (e) {
+    console.error('AI 对话失败:', e.message);
+    return res.status(500).json({ code: 500, error: 'AI 对话请求失败', fallback: true });
+  }
+});
+
 // ============= 用户相关 API =============
 
 // 注册

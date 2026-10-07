@@ -2474,6 +2474,12 @@ body.mature-theme .onboarding-skip{color:rgba(255,255,255,0.3);}
 .funzone-item:hover{transform:translateY(-4px) scale(1.02);border-color:var(--primary-light);box-shadow:0 6px 20px rgba(108,142,239,0.15);}
 .funzone-item .icon{font-size:36px;margin-bottom:8px;display:block;}
 .funzone-item .name{font-size:13px;font-weight:700;color:var(--text-main);}
+.funzone-item{position:relative;}
+.funzone-rec{
+  position:absolute;top:8px;right:8px;font-size:10px;font-weight:700;line-height:1;
+  color:#fff;background:linear-gradient(135deg,#ff9a6c,#ff5f6d);padding:4px 8px;
+  border-radius:20px;box-shadow:0 2px 8px rgba(255,95,109,0.4);letter-spacing:1px;
+}
 
 /* ===== Fun Zone Random Button ===== */
 .funzone-random-btn{
@@ -2777,6 +2783,7 @@ function initApp(){
   setupCustomQuote();
   renderMoodDiaryInline();
   renderWhiteNoiseInline();
+  setupMoodReminderScheduler();
   startStandupTimer();
   // 恢复已购买的商店效果（主题、粒子特效等）
   restoreShopEffects();
@@ -2788,7 +2795,7 @@ function initApp(){
 const features = [
   {id:'chat', icon:'💬', name:'智能对话', desc:'随时陪你聊天', highlight:true},
   {id:'mood', icon:'🌈', name:'心情日记', desc:'记录情绪变化', highlight:true},
-  {id:'funzone', icon:'🎮', name:'趣味解压', desc:'25种解压小游戏', highlight:true},
+  {id:'funzone', icon:'🎮', name:'趣味解压', desc:'19种解压小游戏', highlight:true},
   {id:'relax', icon:'🧘', name:'放松指南', desc:'多种方式解压', highlight:true},
   {id:'focus', icon:'🧊', name:'专注计划', desc:'番茄钟+学习计划'},
   {id:'reward', icon:'🏆', name:'奖励中心', desc:'查看你的成就'},
@@ -2797,6 +2804,8 @@ const features = [
 
 // 趣味解压子菜单（每个玩法独立一格，不分类）
 const funZoneItems = [
+  {id:'tomorrow', icon:'📦', name:'明日盒子', rec:true},
+  {id:'fragment', icon:'🧩', name:'情绪碎片盒', rec:true},
   {id:'doodle', icon:'🎨', name:'涂鸦炸毁'},
   {id:'woodfish', icon:'🪵', name:'功德木鱼'},
   {id:'smash', icon:'🔨', name:'疯狂砸碎'},
@@ -2807,21 +2816,13 @@ const funZoneItems = [
   {id:'shredder', icon:'🗑️', name:'碎纸机'},
   {id:'starry', icon:'✨', name:'烦恼消散'},
   {id:'catchstar', icon:'🌠', name:'捕获星空'},
-  {id:'tomorrow', icon:'📦', name:'明日盒子'},
   {id:'answerbook', icon:'📖', name:'答案之书'},
   {id:'driftbottle', icon:'🍾', name:'心事漂流瓶'},
   {id:'tarot', icon:'🔮', name:'解忧塔罗'},
   {id:'transformer', icon:'🔄', name:'压力变形记'},
   {id:'future', icon:'📮', name:'未来邮箱'},
-  {id:'mailbox', icon:'💌', name:'解忧信箱'},
-  {id:'fragment', icon:'🧩', name:'情绪碎片盒'},
-  {id:'slime', icon:'🟢', name:'捏捏史莱姆'},
   {id:'fruitslice', icon:'🍉', name:'切水果大师'},
   {id:'stackblock', icon:'🧱', name:'叠叠乐'},
-  {id:'sandart', icon:'🏜️', name:'重力沙画'},
-  {id:'waterflow', icon:'💧', name:'水流壶铃'},
-  {id:'leafsweep', icon:'🍂', name:'落叶清扫'},
-  {id:'glowpuzzle', icon:'🔲', name:'微光拼图'},
 ];
 
 function renderFeatureGrid(){
@@ -2841,12 +2842,13 @@ function renderFeatureGrid(){
 function openFunZone(){
   openModal(`
     <div class="modal-title"><span class="emoji">🎮</span>趣味解压</div>
-    <div class="modal-desc">二十五种解压方式，总有一种适合此刻的你。不知道玩哪个？试试随机抽选吧！</div>
+    <div class="modal-desc">十九种解压方式，总有一种适合此刻的你。不知道玩哪个？试试随机抽选吧！</div>
     <div style="text-align:center;margin-bottom:20px;">
       <button class="funzone-random-btn" onclick="randomPickFun()">🎲 随机抽选</button>
     </div>
     <div class="funzone-grid">
       ${funZoneItems.map(f=>`<div class="funzone-item" onclick="openFeature('${f.id}')">
+        ${f.rec?'<span class="funzone-rec">推荐</span>':''}
         <span class="icon">${f.icon}</span>
         <div class="name">${f.name}</div>
       </div>`).join('')}
@@ -3299,6 +3301,164 @@ function delMood(idx){
   toast('已删除一条心情记录');
 }
 
+/* ============================================================
+   每日心情提醒 — 安装到手机后，到点用系统通知提醒记录心情
+   （页面打开/运行时有效；装了 PWA 并允许通知后效果最佳）
+   ============================================================ */
+function getReminderSetting(){
+  return Store.get('moodReminder', {enabled:false, time:'20:00', lastFired:''});
+}
+function saveReminderSetting(s){
+  Store.set('moodReminder', s);
+  syncReminderUI();
+}
+function setReminderTime(v){
+  const s = getReminderSetting();
+  s.time = v;
+  saveReminderSetting(s);
+  toast('提醒时间已设为 ' + v + ' ⏰');
+}
+function toggleMoodReminder(){
+  const s = getReminderSetting();
+  if(s.enabled){
+    s.enabled = false;
+    saveReminderSetting(s);
+    toast('每日提醒已关闭');
+    unsubscribePush();
+    return;
+  }
+  if(!('Notification' in window)){
+    toast('当前浏览器不支持通知，请用手机浏览器打开并安装到桌面');
+    return;
+  }
+  if(Notification.permission === 'denied'){
+    toast('通知权限已被禁止，请到浏览器设置里允许本站的通知');
+    return;
+  }
+  const turnOn = () => {
+    if(!PUSH_PROXY_URL) toast('已开启（页面内提醒）⚠️ 未填推送地址，App 关闭时收不到');
+    else subscribePush();
+    s.enabled = true;
+    s.lastFired = '';
+    saveReminderSetting(s);
+    toast('每日提醒已开启 ✅ 每天 ' + s.time + ' 提醒你');
+  };
+  if(Notification.permission === 'granted'){
+    turnOn();
+  } else {
+    Notification.requestPermission().then(perm => {
+      if(perm === 'granted') turnOn();
+      else toast('未允许通知，提醒无法开启');
+    });
+  }
+}
+
+/* ---- Web Push 订阅 / 退订（配合 Cloudflare Worker） ---- */
+function urlBase64ToU8(s){
+  s = (s||'').replace(/-/g,'+').replace(/_/g,'/');
+  const pad = s.length % 4 ? '='.repeat(4 - s.length % 4) : '';
+  const bin = atob(s + pad);
+  const out = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function pushBase(){ return (PUSH_PROXY_URL || '').replace(/\/$/,''); }
+async function subscribePush(){
+  try{
+    if(!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    const reg = await navigator.serviceWorker.ready;
+    if(!reg.pushManager) return;
+    const resp = await fetch(pushBase() + '/api/push/config');
+    const cfg = await resp.json();
+    if(!cfg.enabled || !cfg.publicKey){
+      toast('⚠️ 推送服务未配置好，只能页面内提醒');
+      return;
+    }
+    let sub = await reg.pushManager.getSubscription();
+    if(!sub){
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToU8(cfg.publicKey),
+      });
+    }
+    await fetch(pushBase() + '/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: sub.endpoint, keys: { auth: sub.getKey('auth'), p256dh: sub.getKey('p256dh') } }),
+    });
+    saveReminderSetting(getReminderSetting()); // 触发 UI 刷新
+  }catch(e){
+    console.warn('订阅推送失败：', e);
+    toast('订阅推送失败，请稍后再试');
+  }
+}
+async function unsubscribePush(){
+  try{
+    if(!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    if(!pushBase()) return;
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if(sub){
+      await fetch(pushBase() + '/api/push/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: sub.endpoint }),
+      }).catch(()=>{});
+      await sub.unsubscribe();
+    }
+  }catch(e){ console.warn('退订推送失败：', e); }
+}
+function syncReminderUI(){
+  const s = getReminderSetting();
+  const timeEl = document.getElementById('reminderTime');
+  const btn = document.getElementById('reminderToggleBtn');
+  const status = document.getElementById('reminderStatus');
+  const hint = document.getElementById('reminderPermHint');
+  if(timeEl) timeEl.value = s.time;
+  if(btn) btn.textContent = s.enabled ? '关闭提醒' : '开启提醒';
+  if(status){
+    if(s.enabled) status.textContent = '🔔 已开启 · 每天 ' + s.time + ' 提醒你记录今天的心情';
+    else if('Notification' in window && Notification.permission === 'granted')
+      status.textContent = '还没开启。设好时间点「开启提醒」即可。';
+    else if('Notification' in window && Notification.permission === 'denied')
+      status.textContent = '⚠️ 通知权限被拒绝，需在浏览器设置中重新允许';
+    else
+      status.textContent = '点击「开启提醒」后，浏览器会请求通知权限，允许即可收到提醒。';
+  }
+  if(hint) hint.textContent = ('Notification' in window && Notification.permission === 'denied') ? '（已被浏览器禁用）' : '';
+}
+// 每分钟检查：到点且今天还没记录心情 → 提醒
+let _moodReminderSchedulerStarted = false;
+function setupMoodReminderScheduler(){
+  if(_moodReminderSchedulerStarted) return;
+  _moodReminderSchedulerStarted = true;
+  const tick = () => {
+    const s = getReminderSetting();
+    if(!s.enabled) return;
+    const now = new Date();
+    const [hh, mm] = (s.time || '20:00').split(':').map(Number);
+    if(now.getHours() === hh && now.getMinutes() === mm){
+      fireMoodNotification();
+    }
+  };
+  tick();
+  setInterval(tick, 30000);
+}
+function fireMoodNotification(){
+  const s = getReminderSetting();
+  const today = new Date().toLocaleDateString('zh-CN');
+  if(s.lastFired === today) return;          // 今天已提醒过
+  if(getMoodData().find(r=>r.date===today)) return; // 今天已记录，不重复提醒
+  s.lastFired = today;
+  saveReminderSetting(s);
+  toast('🌈 该记录今天的心情啦～');
+  if('Notification' in window && Notification.permission === 'granted'){
+    try{
+      new Notification('🌈 解压星球', { body:'今天的心情怎么样？花10秒记录一下吧～', tag:'moodReminder' });
+    }catch(e){}
+  }
+}
+
 /* Inline mood diary summary (below grid) */
 function renderMoodDiaryInline(){
   const el = document.getElementById('moodDiaryInline');
@@ -3306,6 +3466,7 @@ function renderMoodDiaryInline(){
   const data = getMoodData();
   const today = new Date().toLocaleDateString('zh-CN');
   const todayMood = data.find(r=>r.date===today);
+  const reminder = getReminderSetting();
   const last7 = data.filter(r=>{
     const d = new Date(r.ts);
     return Date.now()-d.getTime() < 7*86400000;
@@ -3331,8 +3492,19 @@ function renderMoodDiaryInline(){
         </div>
       </div>
       <button class="mood-save-btn" onclick="openMoodDiary()" style="width:auto;padding:10px 28px;">打开心情日记 →</button>
+      <div style="margin-top:16px;padding:14px;background:var(--bg-1);border-radius:var(--radius-sm);">
+        <div style="font-size:13px;color:var(--text-sub);margin-bottom:10px;">🔔 每日心情提醒 <span id="reminderPermHint" style="color:var(--text-sub);"></span></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <input type="time" id="reminderTime" value="${reminder.time}" onchange="setReminderTime(this.value)"
+            style="flex:1;min-width:110px;padding:8px 12px;border:1px solid rgba(108,142,239,.3);border-radius:30px;background:var(--card-bg);color:var(--text-main);font-size:14px;font-family:inherit;">
+          <button class="mood-save-btn" id="reminderToggleBtn" onclick="toggleMoodReminder()"
+            style="width:auto;padding:8px 20px;flex-shrink:0;">开启提醒</button>
+        </div>
+        <div id="reminderStatus" style="font-size:12px;color:var(--text-sub);margin-top:8px;line-height:1.5;"></div>
+      </div>
     </div>
   `;
+  syncReminderUI();
 }
 
 /* ============================================================
@@ -3382,6 +3554,11 @@ const BASE_URL = "API链接";
 // ==============================================
 
 const CHAT_MODEL = "openai"; // Pollinations 模型，可改为 "mistral" 等
+
+/* ===== 后台推送（Web Push）Worker 地址 =====
+ * 在 Cloudflare 部署好 push-worker.js 后，把它的地址填到下面，
+ * 例如 "https://mypush.workers.dev"。留空则只使用页面内提醒（App 需保持打开）。 */
+const PUSH_PROXY_URL = "";
 
 // ===== DeepSeek 代理地址（免费方案：Cloudflare Worker） =====
 // 把下面的地址换成你部署好的 Worker 地址，例如 "https://myscript.workers.dev"。
@@ -7808,6 +7985,9 @@ function openBlackHole(){
 let bhAnimId = null;
 let bhNebulaParticles = [];
 let bhStartTime = 0;
+let bhSpinActive = true;      // 是否继续旋转
+let bhSpinStopTimer = null;   // 吞噬完成后几秒停止的定时器
+let bhNebulaDraw = null;      // 保存 draw，便于吞噬后重新启动旋转
 
 function initBlackHoleCanvas(){
   const canvas = document.getElementById('bhCanvas');
@@ -7841,6 +8021,7 @@ function initBlackHoleCanvas(){
   }
 
   bhStartTime = performance.now();
+  bhSpinActive = true;
 
   function draw(){
     const t = (performance.now() - bhStartTime) / 1000;
@@ -7909,9 +8090,32 @@ function initBlackHoleCanvas(){
     ctx.arc(cx, cy, eventHorizonR + 2, 0, Math.PI*2);
     ctx.stroke();
 
-    bhAnimId = requestAnimationFrame(draw);
+    bhNebulaDraw = draw;
+    if(bhSpinActive){
+      bhAnimId = requestAnimationFrame(draw);
+    } else {
+      bhAnimId = null;
+    }
   }
   draw();
+}
+
+// 让黑洞重新旋转（供再次吞噬前调用）
+function keepBlackHoleSpinning(){
+  clearTimeout(bhSpinStopTimer);
+  cancelAnimationFrame(bhAnimId);
+  bhAnimId = null;
+  bhSpinActive = true;
+  if(bhNebulaDraw) bhNebulaDraw();
+}
+// 吞噬完成后，再过几秒停止旋转
+function stopBlackHoleSpinAfter(ms){
+  clearTimeout(bhSpinStopTimer);
+  bhSpinStopTimer = setTimeout(()=>{
+    bhSpinActive = false;
+    cancelAnimationFrame(bhAnimId);
+    bhAnimId = null;
+  }, ms);
 }
 
 /* ---- 文字粒子吞噬动画 ---- */
@@ -7933,6 +8137,9 @@ function blackHoleDevour(){
   const btn = document.getElementById('bhBtn');
   btn.disabled = true;
   btn.textContent = '吞噬中...';
+
+  // 确保黑洞开始旋转（若上次已停止则重启）
+  keepBlackHoleSpinning();
 
   // 播放音效
   playBlackHoleSound();
@@ -8095,6 +8302,9 @@ function blackHoleDevour(){
 
       btn.disabled = false;
       btn.textContent = '丢入黑洞';
+
+      // 让黑洞再旋转几秒后停下（不再一直转下去）
+      stopBlackHoleSpinAfter(3500);
 
       // 检查成就
       checkBlackHoleAchievement(bhCount);
@@ -8500,6 +8710,9 @@ let bhStressParticleAnimId = null;
 let bhStressOverlay = null;
 let bhStressStartTime = 0;
 let bhStressCount = 0;
+let bhStressSpinActive = true;      // 是否继续旋转
+let bhStressSpinStopTimer = null;   // 吞噬完成后几秒停止的定时器
+let bhStressNebulaDraw = null;      // 保存 draw，便于重启旋转
 
 function initBlackHoleStress(){
   bhStressCount = Store.get('bh_count', 0);
@@ -8545,6 +8758,7 @@ function initBlackHoleStressCanvas(){
   }
 
   bhStressStartTime = performance.now();
+  bhStressSpinActive = true;
 
   function draw(){
     const t = (performance.now() - bhStressStartTime) / 1000;
@@ -8618,6 +8832,24 @@ function initBlackHoleStressCanvas(){
   draw();
 }
 
+// 让应力版黑洞重新旋转（供再次吞噬前调用）
+function keepBlackHoleSpinningStress(){
+  clearTimeout(bhStressSpinStopTimer);
+  cancelAnimationFrame(bhStressAnimId);
+  bhStressAnimId = null;
+  bhStressSpinActive = true;
+  if(bhStressNebulaDraw) bhStressNebulaDraw();
+}
+// 吞噬完成后，再过几秒停止旋转
+function stopBlackHoleSpinAfterStress(ms){
+  clearTimeout(bhStressSpinStopTimer);
+  bhStressSpinStopTimer = setTimeout(()=>{
+    bhStressSpinActive = false;
+    cancelAnimationFrame(bhStressAnimId);
+    bhStressAnimId = null;
+  }, ms);
+}
+
 function blackHoleDevourStress(){
   const ta = document.getElementById('bhTextStress');
   const text = ta.value.trim();
@@ -8632,6 +8864,8 @@ function blackHoleDevourStress(){
   const btn = document.getElementById('bhBtnStress');
   btn.disabled = true;
   btn.textContent = '吞噬中...';
+
+  keepBlackHoleSpinningStress();
 
   playBlackHoleSound();
 
@@ -8765,6 +8999,9 @@ function blackHoleDevourStress(){
 
       btn.disabled = false;
       btn.textContent = '丢入黑洞';
+
+      // 让黑洞再旋转几秒后停下（不再一直转下去）
+      stopBlackHoleSpinAfterStress(3500);
 
       checkBlackHoleAchievement(bhStressCount);
 

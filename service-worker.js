@@ -35,6 +35,42 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+/* ---------- 收到系统推送 → 弹出通知 ---------- */
+self.addEventListener('push', (event) => {
+  let title = '🌈 解压星球';
+  let body = '今天的心情怎么样？花10秒记录一下吧～';
+  try {
+    if (event.data) {
+      const d = event.data.json();
+      if (d.title) title = d.title;
+      if (d.body) body = d.body;
+    }
+  } catch (e) {}
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: body,
+      icon: './icons/icon-192.png',
+      badge: './icons/icon-192.png',
+      tag: 'moodReminder',
+      data: { url: './stress-relief-planet.html' }
+    })
+  );
+});
+
+/* ---------- 点击通知 → 打开应用 ---------- */
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || './stress-relief-planet.html';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if ('focus' in c) { c.navigate(target); return c.focus(); }
+      }
+      return clients.openWindow(target);
+    })
+  );
+});
+
 /* ---------- 请求拦截：stale-while-revalidate ---------- */
 self.addEventListener('fetch', (event) => {
   const { request } = event;
